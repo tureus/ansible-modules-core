@@ -825,10 +825,26 @@ class TaskParameters(DockerBaseClass):
 
         result = dict(
             host_config=self._host_config(),
-            volumes=self._get_mounts(),
         )
 
         for key, value in create_params.items():
+            if getattr(self, value, None) is not None:
+                result[key] = getattr(self, value)
+        return result
+
+    @property
+    def start_parameters(self):
+        '''
+        Returns parameters used to start a container
+        '''
+        start_params = dict(
+            binds='volume_binds',
+        )
+
+        # https://github.com/docker/docker/issues/2949#issuecomment-230883544
+        result = dict()
+
+        for key, value in start_params.items():
             if getattr(self, value, None) is not None:
                 result[key] = getattr(self, value)
         return result
@@ -1626,10 +1642,10 @@ class ContainerManager(DockerBaseClass):
             container = self.update_networks(container)
 
             if state == 'started' and not container.running:
-                container = self.container_start(container.Id)
+                container = self.container_start(container.Id, self.parameters.start_parameters)
             elif state == 'started' and self.parameters.restart:
                 self.container_stop(container.Id)
-                container = self.container_start(container.Id)
+                container = self.container_start(container.Id, self.parameters.start_parameters)
             elif state == 'stopped' and container.running:
                 self.container_stop(container.Id)
                 container = self._get_container(container.Id)
@@ -1763,13 +1779,13 @@ class ContainerManager(DockerBaseClass):
             return self._get_container(new_container['Id'])
         return new_container
 
-    def container_start(self, container_id):
+    def container_start(self, container_id, start_parameters):
         self.log("start container %s" % (container_id))
         self.results['actions'].append(dict(started=container_id))
         self.results['changed'] = True
         if not self.check_mode:
             try:
-                self.client.start(container=container_id)
+                self.client.start(container=container_id, **start_parameters)
             except Exception as exc:
                 self.fail("Error starting container %s: %s" % (container_id, str(exc)))
 
